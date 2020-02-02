@@ -166,7 +166,6 @@ impl<C: ConsumerContext> BaseConsumer<C> {
         loop {
             unsafe { rdsys::rd_kafka_poll(self.client.native_ptr(), 0) };
             let op_timeout = cmp::min(timeout, self.main_queue_min_poll_interval);
-            let queue = self._queue.as_ref().unwrap();
             let read_message = unsafe {
                 rdsys::rd_kafka_consume_batch(topic_ptr, partition, op_timeout.as_millis(), mem.as_mut_ptr(), num_messages)
             };
