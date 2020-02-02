@@ -107,7 +107,7 @@ pub trait ConsumerContext: ClientContext {
     ///
     /// By default, the minimum poll interval for the main queue is 1s.
     fn main_queue_min_poll_interval(&self) -> Timeout {
-        Timeout::After(Duration::from_secs(1))
+        Timeout::After(Duration::from_millis(1000))
     }
 
     /// Message queue nonempty callback. This method will run when the

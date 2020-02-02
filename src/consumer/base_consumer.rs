@@ -19,6 +19,8 @@ use crate::message::{BorrowedMessage, Message};
 use crate::metadata::Metadata;
 use crate::topic_partition_list::{Offset, TopicPartitionList};
 use crate::util::{cstr_to_owned, Timeout};
+use std::ptr::null_mut;
+use crate::util;
 
 pub(crate) unsafe extern "C" fn native_commit_cb<C: ConsumerContext>(
     _conf: *mut RDKafka,
@@ -134,15 +136,42 @@ impl<C: ConsumerContext> BaseConsumer<C> {
 
     /// Polls the consumer for messages and returns a pointer to the native rdkafka-sys struct.
     /// This method is for internal use only. Use poll instead.
-    pub(crate) fn poll_raw(&self, mut timeout: Timeout) -> Option<*mut RDKafkaMessage> {
+    pub fn poll_raw(&self, mut timeout: Timeout) -> Option<*mut RDKafkaMessage> {
         loop {
-            unsafe { rdsys::rd_kafka_poll(self.client.native_ptr(), 0) };
+            unsafe { rdsys::rd_kafka_poll(self.client.native_ptr(), 100) };
             let op_timeout = cmp::min(timeout, self.main_queue_min_poll_interval);
             let message_ptr = unsafe {
                 rdsys::rd_kafka_consumer_poll(self.client.native_ptr(), op_timeout.as_millis())
             };
             if !message_ptr.is_null() {
                 break Some(message_ptr);
+            }
+            if op_timeout >= timeout {
+                break None;
+            }
+            timeout -= op_timeout;
+        }
+    }
+
+//    pub fn disable_queue_forwarding(&self) {
+//        self._queue
+//            .as_ref()
+//            .map(|q| { unsafe { rdsys::rd_kafka_queue_forward(q.ptr(), null_mut()) } });
+//    }
+
+    pub fn poll_queue_raw(&self, mut timeout: Timeout, mem: &mut Vec<*mut RDKafkaMessage>, num_messages: usize, topic: String, partition: i32) -> Option<isize> {
+        let topic_conf = unsafe { rdsys::rd_kafka_topic_conf_new() };
+        let topic_name_ptr = std::ffi::CString::new(topic).unwrap();
+        let topic_ptr = unsafe { rdsys::rd_kafka_topic_new(self.client.native_ptr(), topic_name_ptr.as_ptr(), topic_conf) };
+        loop {
+            unsafe { rdsys::rd_kafka_poll(self.client.native_ptr(), 0) };
+            let op_timeout = cmp::min(timeout, self.main_queue_min_poll_interval);
+            let queue = self._queue.as_ref().unwrap();
+            let read_message = unsafe {
+                rdsys::rd_kafka_consume_batch(topic_ptr, partition, op_timeout.as_millis(), mem.as_mut_ptr(), num_messages)
+            };
+            if read_message > 0 {
+                break Some(read_message);
             }
             if op_timeout >= timeout {
                 break None;
@@ -168,6 +197,11 @@ impl<C: ConsumerContext> BaseConsumer<C> {
         self.poll_raw(timeout.into())
             .map(|ptr| unsafe { BorrowedMessage::from_consumer(ptr, self) })
     }
+
+//    pub fn poll_queue<T: Into<Timeout>>(&self, timeout: T) -> Option<KafkaResult<BorrowedMessage>> {
+//        self.poll_queue_raw(timeout.into())
+//            .map(|ptr| unsafe { BorrowedMessage::from_consumer(ptr, self) })
+//    }
 
     /// Returns an iterator over the available messages.
     ///

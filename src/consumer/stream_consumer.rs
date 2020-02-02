@@ -34,13 +34,13 @@ const CONSUMER_CHANNEL_SIZE: usize = 10;
 /// reference across threads. However the `StreamConsumer` guarantees that the polling thread
 /// is terminated before the consumer is actually dropped, ensuring that the messages
 /// are safe to be used for their entire lifetime.
-struct PolledMessagePtr {
+pub struct PolledMessagePtr {
     message_ptr: *mut RDKafkaMessage,
 }
 
 impl PolledMessagePtr {
     /// Creates a new PolledPtr from a message pointer. It takes the ownership of the message.
-    fn new(message_ptr: *mut RDKafkaMessage) -> PolledMessagePtr {
+    pub fn new(message_ptr: *mut RDKafkaMessage) -> PolledMessagePtr {
         trace!("New polled ptr {:?}", message_ptr);
         PolledMessagePtr { message_ptr }
     }
@@ -51,6 +51,15 @@ impl PolledMessagePtr {
     fn into_message_of<C: ConsumerContext>(
         mut self,
         consumer: &StreamConsumer<C>,
+    ) -> KafkaResult<BorrowedMessage> {
+        let msg = unsafe { BorrowedMessage::from_consumer(self.message_ptr, consumer) };
+        self.message_ptr = ptr::null_mut();
+        msg
+    }
+
+    pub fn convert<C: ConsumerContext>(
+        mut self,
+        consumer: &BaseConsumer<C>,
     ) -> KafkaResult<BorrowedMessage> {
         let msg = unsafe { BorrowedMessage::from_consumer(self.message_ptr, consumer) };
         self.message_ptr = ptr::null_mut();
